@@ -1,0 +1,9 @@
+knolleary/PubSubClient@^2.8
+4-20ma/ModbusMaster@^2.0.1
+NTPClient
+bblanchon/ArduinoJson@^7.1.0
+thingpulse/ESP8266 and ESP32 OLED driver for SSD1306 displays@^4.4.1
+khoih-prog/ESP_WifiManager@^1.12.1
+yaacov/ModbusSlave@^2.1.1
+MQTT
+plerup/EspSoftwareSerial@^8.1.0
