@@ -11,6 +11,7 @@ static SofarComm SofarInv2;
 EspSoftwareSerial::UART SofarSerial;
 
 bool SofarSerialClaimed = false;
+QueueHandle_t batteryCloudDataQueue;
 
 
 void SofarNettoDeliveryCallback(void * parameter){
@@ -105,6 +106,16 @@ void SofarBatterySetpointCallback(void * parameter){
 
 void setup_SofarComm() {
 
+    
+     // Create queues
+    batteryCloudDataQueue = xQueueCreate(1, sizeof(struct batteryclouddata));
+    // Check if queues were created successfully
+    if (batteryCloudDataQueue == NULL ) {
+        Console0.print("Failed to create batteryCloudDataQueue!\n");
+        return;
+    }
+
+    
     InverterDataQueue = xQueueCreate ( 10, sizeof(struct Inverter ) );
     
     if( InverterDataQueue == NULL )
@@ -135,7 +146,7 @@ void setup_SofarComm() {
     );
 */
 
-    SofarInv1.configure(12,"INV1",1,SofarSerial,SofarSerialClaimed,InverterDataQueue,timeClient,inverterData,batteryCloudData);
+    SofarInv1.configure(12,"INV1",1,SofarSerial,SofarSerialClaimed,InverterDataQueue,timeClient,inverterData,batteryCloudDataQueue);
     SofarInv1.AttachConsole(Serial);
     //SofarInv1.enableHAAutoDiscovery(AutoConfigQueue);
     /*if( AutoConfigQueue == NULL )

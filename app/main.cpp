@@ -42,7 +42,7 @@ void setup() {
   };
   axp192.begin(initDef);*/
 
-  //displaySetup();
+ 
  
   // ----------------------------------------------------------------
     // TASK: Connect to WiFi & keep the connection alive.
@@ -65,7 +65,7 @@ void setup() {
       xTaskCreate(
         fetchTimeFromNTP,
         "Update NTP time",
-        5000,            // Stack size (bytes)
+        8192,            // Stack size (bytes)
         NULL,             // Parameter
         5,                // Task priority
         NULL              // Task handle
@@ -123,6 +123,7 @@ void setup() {
   setup_SofarComm();
   //setup_DTSU666_em_client();
   //setup_DSSU666();
+   displaySetup();
  
 
   Console0.printf("%d [MAIN] All tasks are initialized\n",millis());

@@ -22,6 +22,7 @@ struct batteryclouddata
   float calc_solarload;  // Calculated solar load (in Watts)
   float battery_capacity;  // battery capacity (in Watt/hour)
   int d_soc;             // Desired state of charge (in percentage)
+  int c_soc;             // Desired state of charge (in percentage)
   float cur_tariff;      // Current tariff (e.g., in €/kWh)
   float requested_batteryload; // Calculated battery load (in Watts)
 	unsigned long timestamp;

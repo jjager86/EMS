@@ -35,19 +35,23 @@ const uint8_t img_meter[] PROGMEM = {
   0x1C, 0x38, 0xE8, 0x17, 0xE0, 0x07, 0x00, 0x00,
 };
 
-
-    SSD1306Wire display(0x3c,21,22); 
+SSD1306Wire display(0x3c, SDA, SCL);
+  //  SSD1306Wire display(0x3c,21,22); 
     OLEDDisplayUi ui     ( &display );
  
 void mainOverlay(OLEDDisplay *display, OLEDDisplayUiState* state) {
   if(WiFi.status() == WL_CONNECTED){
     display->drawXbm(0, 0, logo_width,logo_height, img_wifi);
   }
- if(ems_apiconfig.status > 1){      
-  display->drawXbm(20, 0, logo_width,logo_height, img_cloud);
- } else {
-  display->drawXbm(20, 0, logo_width,logo_height, img_cloud);
- }
+
+ if (ems_apiconfig.status > 3) {      
+    display->drawXbm(20, 0, logo_width, logo_height, img_cloud);
+} else {
+    display->drawXbm(20, 0, logo_width, logo_height, img_cloud);
+}
+display->setTextAlignment(TEXT_ALIGN_RIGHT);
+display->setFont(ArialMT_Plain_10);
+display->drawString(120,3, timeClient.getFormattedTime().c_str() );
  // if (meterdata_obj.lastvalue + 10000 > millis()){
  //   display->drawXbm(40, 0, logo_width,logo_height, img_meter);
  // }
@@ -57,25 +61,13 @@ void mainOverlay(OLEDDisplay *display, OLEDDisplayUiState* state) {
 
 // utility function for digital clock display: prints leading 0
 String twoDigits(int digits) {
-  if (digits < 10) {
-    String i = '0' + String(digits);
-    return i;
-  }
-  else {
-    return String(digits);
-  }
+    if (digits < 10) {
+        return '0' + String(digits);
+    } else {
+        return String(digits);
+    }
 }
 
-
-void drawClockFrame(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int16_t y) {
- 
-  display->setTextAlignment(TEXT_ALIGN_CENTER);
-  display->setFont(ArialMT_Plain_16);
-  //display->drawString(0,16, timeClient. );
-  //display->setFont(ArialMT_Plain_24);
-  display->drawString(79,32, timeClient.getFormattedTime() );
-  display->drawXbm(10, 64, logo_width,logo_height, img_meter);
-}
 
 void drawMeterdata(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int16_t y) {
   
@@ -98,23 +90,36 @@ display->drawXbm(5, 64, logo_width,logo_height, img_meter);
 }
 
 void drawCloudData(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int16_t y) {
-  
-if (batteryCloudData.timestamp + 60000 > millis()){
-  display->setTextAlignment(TEXT_ALIGN_CENTER);
-   display->setFont(ArialMT_Plain_16);
-   char buffer[40];
-   sprintf(buffer,"SOC %d",batteryCloudData.d_soc);
-   display->drawString(70, 30, String(buffer));    
-   display->setFont(ArialMT_Plain_10);
-   //sprintf(buffer,"%4.0fW - %4.0fW",batteryCloudData.calc_batteryload,batteryCloudData.requested_batteryload);
-  display->drawString(70, 50, String(buffer)); 
-  
-} else {
-  display->setTextAlignment(TEXT_ALIGN_CENTER);
-   display->setFont(ArialMT_Plain_10);
-   display->drawString(79,32, "No CloudData for 60s");  
-};
-display->drawXbm(5, 64, logo_width,logo_height, img_meter);
+  //batteryclouddata bcd;
+  if (uxQueueMessagesWaiting(batteryCloudDataQueue) > 0) {
+    if (xQueuePeek(batteryCloudDataQueue, &batteryCloudData, (TickType_t) 10) == pdPASS) {
+      if (batteryCloudData.timestamp + 60000 > millis()) {
+        display->setTextAlignment(TEXT_ALIGN_CENTER);
+        display->setFont(ArialMT_Plain_10);
+        char buffer[40];
+        sprintf(buffer, "%d%% > %d%%", batteryCloudData.c_soc, batteryCloudData.d_soc);
+        display->drawString(70, 25, String(buffer));    
+        display->setFont(ArialMT_Plain_10);
+        //display->setColor(SSD1306_YELLOW);
+        sprintf(buffer, "From API %3.0fW", batteryCloudData.calc_batteryload);
+        display->drawString(70, 40, String(buffer)); 
+        //display->setColor(SSD1306_WHITE); // Reset to default color
+        sprintf(buffer, "Requested %3.0fW", batteryCloudData.requested_batteryload);
+        display->drawString(70, 50, String(buffer));
+        
+        
+      } else {
+        display->setTextAlignment(TEXT_ALIGN_CENTER);
+        display->setFont(ArialMT_Plain_10);
+        display->drawString(79, 32, "No CloudData for 60s");  
+      }
+    }
+  } else {
+    display->setTextAlignment(TEXT_ALIGN_CENTER);
+    display->setFont(ArialMT_Plain_10);
+    display->drawString(79, 32, "Init CloudData");  
+  }
+  display->drawXbm(5, 64, logo_width, logo_height, img_meter);
 }
 
 void drawInverterdata(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int16_t y) {
@@ -127,7 +132,7 @@ void drawInverterdata(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x
 
 }
 
-FrameCallback frames[] = { drawClockFrame };
+FrameCallback frames[] = { drawCloudData };
 OverlayCallback overlays[] = { mainOverlay };
 
 
@@ -135,16 +140,17 @@ void displayUITask(void * parameter){
         for(;;){
          ui.update();
          //Console0.printf("%d [DISPLAY] Display update\n",millis());
-         vTaskDelay( 100 / portTICK_PERIOD_MS);
+         vTaskDelay( 1000 / portTICK_PERIOD_MS);
         }
 }
 
  void displaySetup(){
-      ui.setTargetFPS(5);
+   // Initialize the display
+  display.init();
   
-  ui.disableAllIndicators();
-      
-      ui.setFrames(frames, 3);
+      ui.setTargetFPS(5);
+      ui.disableAllIndicators();
+      ui.setFrames(frames, 1);
       ui.setOverlays(overlays, 1);
       ui.setTimePerFrame(10000);
       ui.init();
@@ -155,7 +161,7 @@ void displayUITask(void * parameter){
        xTaskCreate(
       displayUITask,           // Task function
       "displayUITask",               // Task name
-      6000,                  // Stack size (bytes)
+      8192,                  // Stack size (bytes)
       NULL,                   // Task parameter
       2,                    // Task priority
       NULL                  // Task handle

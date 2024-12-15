@@ -14,24 +14,25 @@
     // TODO: this does not take timezones into account! Only UTC for now.
     NTPClient timeClient(ntpUDP, NTP_SERVER, NTP_OFFSET_SECONDS, NTP_UPDATE_INTERVAL_MS);
 
-    void fetchTimeFromNTP(void * parameter){
-        for(;;){
-            if(!WiFi.isConnected()){
-                vTaskDelay(10*1000 / portTICK_PERIOD_MS);
-                continue;
-            }
-
-            Console0.printf("%d [NTP] Fetch time\n",millis());
-            timeClient.update();
-
-            String timestring = timeClient.getFormattedTime();
-            short tIndex = timestring.indexOf("T");
-            
-            Console0.printf("%d [NTP] Set time to %s\n",millis(),timestring);
-
-            // Sleep for a minute before checking again
-            vTaskDelay(NTP_UPDATE_INTERVAL_MS / portTICK_PERIOD_MS);
+    void fetchTimeFromNTP(void * parameter) {
+    for(;;) {
+        if(!WiFi.isConnected()) {
+            vTaskDelay(10 * 1000 / portTICK_PERIOD_MS);
+            continue;
         }
+
+        Console0.printf("%d [NTP] Fetch time\n", millis());
+        timeClient.update();
+
+        String timestring = timeClient.getFormattedTime();
+        short tIndex = timestring.indexOf("T");
+        
+        Console0.printf("%d [NTP] Set time to %s\n", millis(), timestring.c_str());
+        Console0.printf("Free heap: %d\n", ESP.getFreeHeap());
+
+        // Sleep for a minute before checking again
+        vTaskDelay(NTP_UPDATE_INTERVAL_MS / portTICK_PERIOD_MS);
     }
+}
 #endif
 #endif

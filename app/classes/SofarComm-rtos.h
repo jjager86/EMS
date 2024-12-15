@@ -27,7 +27,7 @@ class SofarComm {
 public:
   TaskHandle_t RunStateTask;
   TaskHandle_t BatterySaveTask;
-  
+ 
 
 private:
     char _server;
@@ -45,16 +45,17 @@ private:
     TaskHandle_t generateHAAutoDiscoveryHandle;
     HardwareSerial *Console;
     int lastPowerToBattery;
-    batteryclouddata *_batteryCloudData;
+    QueueHandle_t *_batteryCloudDataQueue;
     inverterdata *_inverterData; 
     NTPClient *_timeClient;
-  
+
+
 
 //functions
 
 public:
 	SofarComm(void);
-  void configure(uint8_t modbusId,String name,int Phase,EspSoftwareSerial::UART &Serial,bool &SerialClaimed, QueueHandle_t &InverterDataQueue,NTPClient &timeClient,inverterdata &inverterData,batteryclouddata &batteryCloudData);
+  void configure(uint8_t modbusId,String name,int Phase,EspSoftwareSerial::UART &Serial,bool &SerialClaimed, QueueHandle_t &InverterDataQueue,NTPClient &timeClient,inverterdata &inverterData,QueueHandle_t &batteryCloudDataQueue);
 
   void start(int core);
   void setMQTTdata(PubSubClient &PubSubClient,char &server,char &username,char &password,char &topicname);
@@ -66,6 +67,8 @@ public:
   void setMode(String cmd);
 
   void setFieldValue(const std::string& mqttname, float val);
+  bool isDataChanged(const batteryclouddata& data, const batteryclouddata& origdata);
+
   //void setDelivery(int wattage);
   //void setBatteryPower(int wattage);
   

@@ -94,9 +94,16 @@ bool adopt() {
   return false;
 }
 
-String getnextHour(int SOC) {
-    Console0.printf("%d [API] fetching setpoint with SOC %d \n", millis(),SOC);
+String getnextHour() {
+    // Load the existing object from the queue
+    if (uxQueueMessagesWaiting(batteryCloudDataQueue) > 0) {
+        if (xQueuePeek(batteryCloudDataQueue, &batteryCloudData, (TickType_t) 10) == pdPASS) {
+        }
+    }
+    Console0.printf("%d [API] fetching setpoint with SOC %d \n", millis(), batteryCloudData.c_soc);
     ems_apiconfig.pending = 1;
+
+    
 
     if (WiFi.status() == WL_CONNECTED) {
         HTTPClient http;
@@ -107,13 +114,13 @@ String getnextHour(int SOC) {
         http.addHeader("X-AUTHTOKEN", ems_apiconfig.authToken);
 
         // Create JSON body with the current power data
-        String jsonBody = "{\"SOC\":" + String(SOC) + "}";
+        String jsonBody = "{\"SOC\":" + String(batteryCloudData.c_soc) + "}";
 
         int httpCode = http.POST(jsonBody);  // Send the POST request
         String response = http.getString();  // Get the response
 
         if (httpCode == 200) {
-            JsonDocument doc;
+            DynamicJsonDocument doc(1024);
             DeserializationError error = deserializeJson(doc, response);
 
             if (error) {
@@ -123,20 +130,20 @@ String getnextHour(int SOC) {
 
             // Check if the key "gridload" exists and is valid
             if (doc.containsKey("gridload")) {
-                //float gridload = doc["gridload"].as<float>();
-                //float batteryload = doc["batteryload"].as<float>();
-                //gridload = gridload * -1;
-                
-                batteryCloudData.timestamp = millis();
-                batteryCloudData.calc_gridload =  doc["gridload"].as<float>();
-                batteryCloudData.calc_batteryload =  doc["batteryload"].as<float>();
-                batteryCloudData.calc_solarload =  doc["solarload"].as<float>();
-                batteryCloudData.d_soc =  doc["soc"].as<int>();
-                batteryCloudData.cur_tariff =  doc["tariff"].as<float>();
-                batteryCloudData.battery_capacity =  doc["batterycap"].as<float>();
 
+                 
+
+                batteryCloudData.timestamp = millis();
+                batteryCloudData.calc_gridload = doc["gridload"].as<float>();
+                batteryCloudData.calc_batteryload = doc["batteryload"].as<float>();
+                batteryCloudData.calc_solarload = doc["solarload"].as<float>();
+                batteryCloudData.d_soc = doc["soc"].as<int>();
+                batteryCloudData.cur_tariff = doc["tariff"].as<float>();
+                batteryCloudData.battery_capacity = doc["batterycap"].as<float>();
+
+                // Update the object and push it back to the queue
+                xQueueOverwrite(batteryCloudDataQueue, &batteryCloudData); // Overwrite the existing item
                 Console0.printf("%d [API] Cloud Battery Management Data Updated\n", millis());
-                //setInverterBatterySetpoint(batteryload);  // Assuming setInverterDelivery accepts float
             } else {
                 Console0.printf("%d [API] Cloud Battery Management Data response failed!\n", millis());
             }
@@ -186,16 +193,17 @@ void APIhandler(void * parameter){
     for(;;){
         if(WiFi.status() == WL_CONNECTED){
             if (ems_apiconfig.apiKey == ""){
+                ems_apiconfig.status = 1;
                 adopt();
                 vTaskDelay(1000 / portTICK_PERIOD_MS);
                 continue;
             }
             if (auth()){
-                ems_apiconfig.status = 2;
+                //ems_apiconfig.status = 2;
                 //String provisionData = provision();
                 ems_apiconfig.status = 3;
-                getnextHour(SofarInv1.getCurrentSOC());
-                vTaskDelay(60000 / portTICK_PERIOD_MS);
+                getnextHour();
+                vTaskDelay(30000 / portTICK_PERIOD_MS);
                 continue;
             }
                 

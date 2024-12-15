@@ -144,7 +144,7 @@ void SofarComm::setMQTTdata(PubSubClient &PubSubClient, char &server,char &usern
 	_topicname = topicname;
 }
 
-void SofarComm::configure(uint8_t modbusId,String name,int Phase,EspSoftwareSerial::UART &Serial,bool &SerialClaimed, QueueHandle_t &InverterDataQueue,NTPClient &timeClient,inverterdata &inverterData,batteryclouddata &batteryCloudData){
+void SofarComm::configure(uint8_t modbusId,String name,int Phase,EspSoftwareSerial::UART &Serial,bool &SerialClaimed, QueueHandle_t &InverterDataQueue,NTPClient &timeClient,inverterdata &inverterData,QueueHandle_t &batteryCloudDataQueue){
 	SofarComm::_I.modbusId = modbusId;
 	SofarComm::_I.name = name;
 	SofarComm::_I.Phase = Phase;
@@ -154,9 +154,7 @@ void SofarComm::configure(uint8_t modbusId,String name,int Phase,EspSoftwareSeri
 	_InverterDataQueue = &InverterDataQueue;
 	_timeClient = &timeClient;
 	_inverterData = &inverterData;
-	_batteryCloudData = &batteryCloudData;
-	
-
+	_batteryCloudDataQueue = &batteryCloudDataQueue;
 }
 
 void SofarComm::enableHAAutoDiscovery(QueueHandle_t AutoConfigQueue){
@@ -203,7 +201,7 @@ void SofarComm::start(int core = APP_CPU_NUM){
 		xTaskCreatePinnedToCore(
       this->setBatteryManagement,           // Task function
       "setBatteryManagement",               // Task name
-      2000,                  // Stack size (bytes)
+      8192,                  // Stack size (bytes)
       (void *)this,                   // Task parameter
       2,                      // Task priority
      //&RunStateTask,
@@ -401,17 +399,16 @@ void SofarComm::setDelivery(int wattage)
         int32_t Gdzlo = 5500; // Purchase of power
 
         // Split the 32-bit integers into 16-bit integers
-        uint16_t data[6];
-        data[0] = (uint16_t)(Gdes >> 16);  // High word of Gdes
-        data[1] = (uint16_t)(Gdes & 0xFFFF); // Low word of Gdes
-        data[2] = (uint16_t)(blo >> 16);  // High word of blo
-        data[3] = (uint16_t)(blo & 0xFFFF); // Low word of blo
-        data[4] = (uint16_t)(bup >> 16);  // High word of bup
-        data[5] = (uint16_t)(bup & 0xFFFF); // Low word of bup
-        data[6] = (uint16_t)(Gdzup >> 16);  // High word of Gdzup
-        data[7] = (uint16_t)(Gdzup & 0xFFFF); // Low word of Gdzup
-        data[8] = (uint16_t)(Gdzlo >> 16);  // High word of Gdzlo
-        data[9] = (uint16_t)(Gdzlo & 0xFFFF); // Low word of Gdzlo
+		data[0] = (uint16_t)(Gdes >> 16);  // High word of Gdes
+		data[1] = (uint16_t)(Gdes & 0xFFFF); // Low word of Gdes
+		data[2] = (uint16_t)(blo >> 16);  // High word of blo
+		data[3] = (uint16_t)(blo & 0xFFFF); // Low word of blo
+		data[4] = (uint16_t)(bup >> 16);  // High word of bup
+		data[5] = (uint16_t)(bup & 0xFFFF); // Low word of bup
+		data[6] = (uint16_t)(Gdzup >> 16);  // High word of Gdzup
+		data[7] = (uint16_t)(Gdzup & 0xFFFF); // Low word of Gdzup
+		data[8] = (uint16_t)(Gdzlo >> 16);  // High word of Gdzlo
+		data[9] = (uint16_t)(Gdzlo & 0xFFFF); // Low word of Gdzlo
 
         uint8_t result;
         for (int i = 0; i < 6; i++) {
@@ -526,6 +523,7 @@ void SofarComm::setBatteryManagement(void* pvParameters) {
         int fnCode = 0;
         int fnParam; 
 
+		QueueHandle_t queue = *_this->_batteryCloudDataQueue;
 
 		//_this->setMode("PassiveManual");
         // Ensure NTPClient is initialized and updated successfully before continuing
@@ -546,14 +544,26 @@ void SofarComm::setBatteryManagement(void* pvParameters) {
 			continue;
 		}*/
 
-        // Get the current time from the NTP client
-        int currentMinutes = _this->_timeClient->getMinutes(); // Get the current minute of the hour
-        int remainingMinutes = 60 - currentMinutes;   // Calculate how many minutes are left in this hour
+        int remainingMinutes = 60 - _this->_timeClient->getMinutes();;   // Calculate how many minutes are left in this hour
 
-        // Retrieve the current and target SoC (in percentage)
-        float currentSoC = static_cast<float>(_this->_inverterData->battery_soc);  // Current SoC
-        float targetSoC = static_cast<float>(_this->_batteryCloudData->d_soc);    // Target SoC for the next hour
-        float batteryCapacity = static_cast<float>(_this->_batteryCloudData->battery_capacity); // Battery capacity in watt-hours (example)
+          // Variable to hold the received data
+        batteryclouddata data;
+		batteryclouddata origdata;
+
+        // Receive data from the queue
+        if (xQueueReceive(queue, &data, portMAX_DELAY) != pdPASS) {
+            _this->Console->println("Failed to receive batteryCloudData from queue");
+            continue;
+        }
+
+		origdata = data;
+
+        // Use the received data
+		data.c_soc = static_cast<float>(_this->_inverterData->battery_soc);
+        float currentSoC = static_cast<float>(data.c_soc);  // Current SoC
+        float targetSoC = static_cast<float>(data.d_soc);    // Target SoC for the next hour
+        float batteryCapacity = static_cast<float>(data.battery_capacity); // Battery capacity in watt-hours (example)
+
 
         // Calculate the amount of energy (in Wh) needed to reach the target SoC
         float requiredEnergyWh = ((targetSoC - currentSoC) / 100) * batteryCapacity;
@@ -562,7 +572,7 @@ void SofarComm::setBatteryManagement(void* pvParameters) {
         float powerForRemainingTime = requiredEnergyWh * (60 / remainingMinutes);  // Adjust power based on remaining minutes
 
         // Get the available solar energy in Watts
-        int solarEnergyAvailable = _this->_batteryCloudData->calc_solarload;
+        int solarEnergyAvailable = 0;//_this->batteryCloudData->calc_solarload;
 
 		_this->Console->printf("%d [SOFAR_%s] Current->Dest SOC %.2f->%.2f, requires charge of %.2f Wh, total cap: %.2f\n, remaining min in hour %d",millis(), _this->_I.name,currentSoC,targetSoC,requiredEnergyWh,batteryCapacity,remainingMinutes);
 		_this->Console->printf("---> %.2f <---\n",powerForRemainingTime);	
@@ -600,12 +610,23 @@ void SofarComm::setBatteryManagement(void* pvParameters) {
 			fnParam = 0;
 		}
 
+data.requested_batteryload = static_cast<float>(fnParam);
+ //if (_this->isDataChanged(data, origdata)) {
+			_this->Console->printf("%d [SOFAR_%s] Battery settings changed, pushback to queue", millis(), _this->_I.name);
+            // Send the new data to the queue
+			 if (xQueueOverwrite(queue, &data) != pdPASS) {
+                _this->Console->printf("%d [SOFAR_%s] Failed to send batteryCloudData to queue", millis(), _this->_I.name);
+            }
+       // }
+
 		if (_this->lastPowerToBattery == fnParam){
 			vTaskDelay(1000 / portTICK_PERIOD_MS);
 			continue;
 		} else {
 			_this->lastPowerToBattery = fnParam;
-			_this->_batteryCloudData->requested_batteryload = static_cast<float>(fnParam);
+			
+			
+			//_this->_batteryCloudData->requested_batteryload = static_cast<float>(fnParam);
 		}
 
         // Define the parameters to be tracked
@@ -616,22 +637,22 @@ void SofarComm::setBatteryManagement(void* pvParameters) {
         int32_t Gdzlo = 5500; // Purchase of power
 
          // Split the 32-bit integers into 16-bit integers
-        uint16_t data[6];
-        data[0] = (uint16_t)(Gdes >> 16);  // High word of Gdes
-        data[1] = (uint16_t)(Gdes & 0xFFFF); // Low word of Gdes
-        data[2] = (uint16_t)(blo >> 16);  // High word of blo
-        data[3] = (uint16_t)(blo & 0xFFFF); // Low word of blo
-        data[4] = (uint16_t)(bup >> 16);  // High word of bup
-        data[5] = (uint16_t)(bup & 0xFFFF); // Low word of bup
-        data[6] = (uint16_t)(Gdzup >> 16);  // High word of Gdzup
-        data[7] = (uint16_t)(Gdzup & 0xFFFF); // Low word of Gdzup
-        data[8] = (uint16_t)(Gdzlo >> 16);  // High word of Gdzlo
-        data[9] = (uint16_t)(Gdzlo & 0xFFFF); // Low word of Gdzlo
+        uint16_t modbus_data[10];
+        modbus_data[0] = (uint16_t)(Gdes >> 16);  // High word of Gdes
+        modbus_data[1] = (uint16_t)(Gdes & 0xFFFF); // Low word of Gdes
+        modbus_data[2] = (uint16_t)(blo >> 16);  // High word of blo
+        modbus_data[3] = (uint16_t)(blo & 0xFFFF); // Low word of blo
+        modbus_data[4] = (uint16_t)(bup >> 16);  // High word of bup
+        modbus_data[5] = (uint16_t)(bup & 0xFFFF); // Low word of bup
+        modbus_data[6] = (uint16_t)(Gdzup >> 16);  // High word of Gdzup
+        modbus_data[7] = (uint16_t)(Gdzup & 0xFFFF); // Low word of Gdzup
+        modbus_data[8] = (uint16_t)(Gdzlo >> 16);  // High word of Gdzlo
+        modbus_data[9] = (uint16_t)(Gdzlo & 0xFFFF); // Low word of Gdzlo
 
         uint8_t result;
         for (int i = 0; i < 6; i++) {
-			_this->Console->printf("Register 0x%04x with value DEC %d HEX 0x%04x \n",(0x1187+i),data[i],data[i]);
-            _this->_Modbus.setTransmitBuffer(i, data[i]);
+			_this->Console->printf("Register 0x%04x with value DEC %d HEX 0x%04x \n",(0x1187+i),modbus_data[i],modbus_data[i]);
+            _this->_Modbus.setTransmitBuffer(i, modbus_data[i]);
         }
         result = _this->_Modbus.writeMultipleRegisters(0x1187, 6);
         
@@ -642,12 +663,18 @@ void SofarComm::setBatteryManagement(void* pvParameters) {
             _this->Console->println(result);
         }
 
+		
         // Delay to run this loop every second
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
-
+bool SofarComm::isDataChanged(const batteryclouddata& data, const batteryclouddata& origdata) {
+    return data.c_soc != origdata.c_soc ||
+           data.d_soc != origdata.d_soc ||
+           data.battery_capacity != origdata.battery_capacity ||
+           data.requested_batteryload != origdata.requested_batteryload;
+}
 
 
 int SofarComm::sendPassiveCmd(uint8_t id, uint16_t cmd, uint16_t param)
